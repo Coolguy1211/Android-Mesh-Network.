@@ -27,7 +27,9 @@ data class MeshPacket(
         VPN_IP_PACKET,
         ROUTING_CONTROL, // Used for route discovery
         TOPOLOGY_UPDATE, // Used for the dashboard
-        ROLE_ADVERTISEMENT // Used for gateways to announce themselves
+        ROLE_ADVERTISEMENT, // Used for gateways to announce themselves
+        PING,
+        PONG
     }
 
     override fun equals(other: Any?): Boolean {

@@ -93,13 +93,17 @@ class NearbyConnectionManager(private val context: Context, private val listener
 
         // 2. Is it for me?
         if (packet.destinationId == localNodeId || packet.destinationId == "BROADCAST") {
-            if (packet.type == MeshPacket.PacketType.ROLE_ADVERTISEMENT) {
-                // Role was already learned in updateRoute
-                broadcastTopology()
-            } else if (packet.type == MeshPacket.PacketType.TOPOLOGY_UPDATE) {
-                handleTopologyUpdate(packet)
-            } else {
-                listener.onMeshPacketReceived(packet)
+            when (packet.type) {
+                MeshPacket.PacketType.ROLE_ADVERTISEMENT -> broadcastTopology()
+                MeshPacket.PacketType.TOPOLOGY_UPDATE -> handleTopologyUpdate(packet)
+                MeshPacket.PacketType.PING -> {
+                    // Immediate response with PONG
+                    sendToNode(packet.originId, packet.data, MeshPacket.PacketType.PONG)
+                }
+                MeshPacket.PacketType.PONG -> {
+                    listener.onMeshPacketReceived(packet)
+                }
+                else -> listener.onMeshPacketReceived(packet)
             }
         }
 
@@ -107,6 +111,11 @@ class NearbyConnectionManager(private val context: Context, private val listener
         if (packet.destinationId != localNodeId && packet.hopCount < 15) { // Max TTL 15
             forwardPacket(packet)
         }
+    }
+
+    fun pingNode(destId: String) {
+        val data = System.currentTimeMillis().toString().toByteArray(Charset.forName("UTF-8"))
+        sendToNode(destId, data, MeshPacket.PacketType.PING)
     }
 
     private fun handleTopologyUpdate(packet: MeshPacket) {
