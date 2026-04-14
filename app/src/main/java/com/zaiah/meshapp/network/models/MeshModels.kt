@@ -29,7 +29,8 @@ data class MeshPacket(
         TOPOLOGY_UPDATE, // Used for the dashboard
         ROLE_ADVERTISEMENT, // Used for gateways to announce themselves
         PING,
-        PONG
+        PONG,
+        RETICULUM_PACKET
     }
 
     override fun equals(other: Any?): Boolean {
