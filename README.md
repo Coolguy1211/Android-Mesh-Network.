@@ -105,13 +105,24 @@ python desktop_control_center.py
 
 ---
 
-## 🚧 Future Roadmap
+## 🌐 Reticulum Network Stack (RNS) Integration
 
--   [x] **TCP Support**: Full user-space state machine implemented.
--   [x] **Persistence**: Device Admin & Launcher mode active.
--   [x] **Desktop Integration**: Python Tray App functional.
--   [ ] **End-to-End Encryption**: Implementing ECDH key exchange for mesh payloads.
--   [ ] **Visual Mesh Map**: Real-time D3.js or Canvas-based node graph.
+This branch (`reticulum-integration`) upgrades the mesh from a custom protocol to the **Reticulum Network Stack**.
+
+### 🚀 Key Advantages
+- **Built-in Cryptography**: Every packet is encrypted and signed using Reticulum's identity system.
+- **Interoperability**: Works with standard Reticulum apps like **Sideband** and **Nomad Network**.
+- **Self-Healing**: Native AODV-style routing that is much more stable than our prototype.
+
+### 📱 How it works
+1. **Nearby Connections** acts as the "Physical Interface".
+2. **RRN (Reticulum Node)** runs in the background via **Chaquopy (Python)**.
+3. The app opens a **Local Interface** on `localhost:4242`.
+4. Other apps on your phone (like Sideband) will automatically "see" our mesh node and can use it to reach the internet or other users.
+
+### 💻 Desktop Interop
+The Desktop Control Center now includes a Reticulum helper that allows your PC to act as a native Reticulum node when connected to your phone's hotspot.
+
 
 ---
 
