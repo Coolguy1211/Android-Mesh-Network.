@@ -5,10 +5,10 @@ An advanced Android application that forms a high-performance, decentralized mes
 ---
 
 ## 🚀 Recent Updates
--   **TCP NAT Relay**: Added support for device-wide TCP traffic (Web browsing, HTTPS).
--   **Multi-hop AODV**: Packets can now traverse multiple nodes to reach the Gateway.
--   **CI/CD Fix**: Increased GitHub Actions memory limits to 4GB for stable builds.
--   **Persistence**: Added Device Admin and Launcher mode to prevent OS task killing.
+-   **Modern Chat UI**: Full-screen messaging with WhatsApp-style bubbles, timestamps, and global sync.
+-   **Desktop Control Center**: Cross-platform (Win/Mac/Linux) tray app for mesh management.
+-   **Stability & Ghost Node Fixes**: Aggressive AODV routing cleanup and auto-detect compatibility mode for older devices (Pixel 3).
+-   **Full TCP/UDP NAT**: Optimized userspace routing for reliable HTTPS browsing and streaming.
 
 ---
 
@@ -45,21 +45,30 @@ An advanced Android application that forms a high-performance, decentralized mes
 ## 🛠 Deep Dive: Core Technologies
 
 ### 1. Mesh Formation (Google Nearby Connections)
-The app uses the `STRATEGY_P2P_CLUSTER` topology, which is a peer-to-peer strategy that supports a many-to-many connection.
-*   **Discovery**: Devices scan via BLE and Bluetooth to find peers.
-*   **Bandwidth Upgrade**: Once a connection is established over Bluetooth, the API automatically negotiates a high-speed WiFi Direct (P2P) or WiFi Hotspot link for data transfer.
-*   **Decentralization**: There is no single master. Any device can connect to any other device, forming a web of connections.
+The app uses the `STRATEGY_P2P_CLUSTER` topology, supporting a many-to-many connection.
+*   **Discovery**: Devices scan via BLE/Bluetooth to find peers.
+*   **Bandwidth Upgrade**: Automatically negotiates a high-speed WiFi Direct (P2P) link.
+*   **Compatibility Mode**: Older devices (like Pixel 3) auto-switch to "Leaf Node" mode to prevent radio hardware crashes.
 
-### 2. Transparent Internet Sharing (VPN Tunneling)
-This is the most complex part of the application. It bypasses the need for tethering/hotspotting which is often blocked by carriers.
-*   **The Client**: Runs an Android `VpnService`. This creates a virtual network interface (TUN) on the device. All system traffic (Chrome, YouTube, Spotify) is intercepted by our app as raw IP packets.
-*   **The Tunnel**: The app reads these packets from the TUN interface, encapsulates them into `MeshPacket.VPN_IP_PACKET`, and routes them through the mesh.
-*   **The Gateway**: Receives the raw IP packets. It performs **User-space NAT (Network Address Translation)** for both **UDP** and **TCP**. It uses a non-blocking NIO Selector loop to manage multiple concurrent internet connections.
+### 2. Modern Chat System
+Messaging is no longer a simple text blob. It now features:
+*   **Bubble UI**: Colored messaging bubbles with sender IDs and timestamps.
+*   **Global Persistence**: Messages are stored in the application context, staying visible even when switching activities or roles.
+*   **Multi-Node Broadcast**: Messages reach every node in the mesh via multi-hop routing.
 
-### 3. Multi-hop AODV Routing
-Nodes maintain dynamic routing tables. If Phone A is too far from the Gateway but can see Phone B, it will use Phone B as a relay node.
-*   **Learning**: Nodes update routes based on the origin field of passing packets.
-*   **Forwarding**: Packets are automatically relayed to the neighbor with the lowest hop count to the destination.
+### 3. Transparent Internet Sharing (VPN Tunneling)
+*   **The Client**: Runs an Android `VpnService` to capture all system traffic as raw IP packets.
+*   **The Tunnel**: Packets are encapsulated into `MeshPacket.VPN_IP_PACKET` and routed to the closest Gateway.
+*   **The Gateway**: Performs **User-space NAT** for both **UDP** and **TCP** using a non-blocking NIO loop. It synthesizes TCP handshakes (`SYN-ACK`) to trick the client OS into a seamless connection.
+
+---
+
+## 💻 Desktop Control Center (Windows / macOS / Linux)
+
+Located in `desktop_app/`, this Python-based application allows laptops to join the mesh.
+*   **System Tray Integration**: Lives in your taskbar for quick access.
+*   **Web API Interface**: Connects to the Android Gateway Phone's Hotspot to provide a full desktop dashboard.
+*   **Features**: View the live topology graph, chat with phones in the mesh, and monitor latency.
 
 ---
 
@@ -85,54 +94,24 @@ Nodes maintain dynamic routing tables. If Phone A is too far from the Gateway bu
 This project is optimized for cloud builds:
 1.  Navigate to **Actions** in your repository.
 2.  Select the **Build Android APK** workflow.
-3.  Download the `app-debug` artifact from the latest successful run.
+3.  Download the `app-debug` artifact.
 
-### Local CLI Build
-```powershell
-./gradlew assembleDebug
+### Desktop App Setup
+```bash
+cd desktop_app
+pip install requests pystray Pillow
+python desktop_control_center.py
 ```
 
 ---
 
-## 🚧 Future Roadmap & Next Steps
+## 🚧 Future Roadmap
 
-This project is evolving towards a stable, real-world decentralized infrastructure system. Here are the high-impact priorities:
-
-### 🔥 1. Improve TCP Reliability
-- Handle retransmissions and packet loss.
-- Support out-of-order packet reassembly.
-- Add basic congestion control awareness.
-- Fully integrate a `tun2socks`-style approach or custom TCP/IP stack for seamless HTTPS browsing and app traffic.
-
-### 🔁 2. Enhance Routing Protocol
-- **Route Aging:** Expire and remove stale routes automatically.
-- **Sequence Numbers:** Prevent routing loops using an AODV-style protocol.
-- **Link Quality:** Route based on latency and signal strength metrics instead of just hop count.
-
-### 🌐 3. Gateway Discovery & Role Advertisement
-- Nodes actively broadcast their capabilities (`GATEWAY`, `RELAY`, `CLIENT`).
-- Clients automatically select the lowest-latency/lowest-hop gateway.
-- Support multiple gateways for failover and load balancing.
-
-### 📡 4. Topology Propagation
-- Share routing table summaries across the mesh to build a global distributed view.
-- Optimize routes based on global knowledge, enabling visual network dashboards.
-
-### 🔐 5. Optional End-to-End Encryption
-- Implement E2E encryption between client and gateway using lightweight key exchange.
-- Encrypt payloads *before* NAT forwarding to ensure privacy in untrusted environments.
-
-### ⚡ 6. Power & Performance Modes
-- Add adaptive power profiles (Low-power relay mode vs. High-performance gateway mode).
-- Smart WakeLock control based on battery levels to prevent long-term drain.
-
-### 🗺️ 7. Mesh Visualization Dashboard
-- Live node graph displaying connections, hops, and routes.
-- Latency and bandwidth indicators within the UI.
-
-### 🧪 8. Testing & Validation Tools
-- Built-in ping tool for node-to-node latency testing.
-- Packet logging/debug mode and simulated network condition testing.
+-   [x] **TCP Support**: Full user-space state machine implemented.
+-   [x] **Persistence**: Device Admin & Launcher mode active.
+-   [x] **Desktop Integration**: Python Tray App functional.
+-   [ ] **End-to-End Encryption**: Implementing ECDH key exchange for mesh payloads.
+-   [ ] **Visual Mesh Map**: Real-time D3.js or Canvas-based node graph.
 
 ---
 
