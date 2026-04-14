@@ -5,7 +5,6 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
@@ -61,7 +60,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
 
             when (protocol) {
                 17 -> handleUDP(originNodeId, destAddress, buffer, ihl)
-                6 -> handleTCP(originNodeId, destAddress, buffer, ihl, packetData)
+                6 -> handleTCP(originNodeId, srcIp, destIp, destAddress, buffer, ihl, packetData)
                 else -> Log.d("NAT", "Unsupported protocol: $protocol")
             }
         } catch (e: Exception) {
@@ -102,7 +101,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
         socket.send(packet)
     }
 
-    private fun handleTCP(originId: String, destAddr: InetAddress, buffer: ByteBuffer, ihl: Int, rawPacket: ByteArray) {
+    private fun handleTCP(originId: String, srcIp: ByteArray, destIp: ByteArray, destAddr: InetAddress, buffer: ByteBuffer, ihl: Int, rawPacket: ByteArray) {
         buffer.position(ihl)
         val srcPort = buffer.short.toInt() and 0xFFFF
         val destPort = buffer.short.toInt() and 0xFFFF
@@ -119,7 +118,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
         
         if (isSyn && !isAck) {
             // New connection
-            val relay = TCPRelay(originId, destAddr, destPort, onResponse)
+            val relay = TCPRelay(originId, srcIp, destIp, destAddr, srcPort, destPort, ackNum.toLong() and 0xFFFFFFFFL, seqNum.toLong() and 0xFFFFFFFFL, onResponse)
             tcpSessions[sessionKey] = relay
             relay.connect(selector)
         } else {
@@ -132,8 +131,18 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
                     val payload = ByteArray(payloadSize)
                     System.arraycopy(rawPacket, ihl + dataOffset, payload, 0, payloadSize)
                     relay.writeToInternet(payload)
+                    relay.clientSeqNum = (seqNum.toLong() and 0xFFFFFFFFL) + payloadSize
                 }
+                
                 if (isFin) {
+                    // Send FIN-ACK
+                    val finAck = TcpPacketBuilder.buildPacket(
+                        srcIp = destIp, destIp = srcIp,
+                        srcPort = destPort, destPort = srcPort,
+                        seqNum = relay.serverSeqNum, ackNum = relay.clientSeqNum + 1,
+                        flags = 0x11 // FIN + ACK
+                    )
+                    onResponse(originId, finAck)
                     relay.close()
                     tcpSessions.remove(sessionKey)
                 }
@@ -143,8 +152,13 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
 
     private class TCPRelay(
         val originId: String,
+        val clientIp: ByteArray,
+        val serverIp: ByteArray,
         val destAddr: InetAddress,
-        val destPort: Int,
+        val clientPort: Int,
+        val serverPort: Int,
+        var serverSeqNum: Long,
+        var clientSeqNum: Long,
         val onResponse: (String, ByteArray) -> Unit
     ) {
         private var channel: SocketChannel? = null
@@ -154,8 +168,20 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
                 try {
                     channel = SocketChannel.open()
                     channel?.configureBlocking(false)
-                    channel?.connect(InetSocketAddress(destAddr, destPort))
+                    channel?.connect(InetSocketAddress(destAddr, serverPort))
                     while (!channel!!.finishConnect()) { Thread.sleep(10) }
+                    
+                    // Send SYN-ACK to client
+                    clientSeqNum++ // ACK the client's SYN
+                    val synAck = TcpPacketBuilder.buildPacket(
+                        srcIp = serverIp, destIp = clientIp,
+                        srcPort = serverPort, destPort = clientPort,
+                        seqNum = serverSeqNum, ackNum = clientSeqNum,
+                        flags = 0x12 // SYN + ACK
+                    )
+                    onResponse(originId, synAck)
+                    serverSeqNum++
+                    
                     channel?.register(selector, SelectionKey.OP_READ, this)
                 } catch (e: Exception) { Log.e("NAT", "TCP Connect failed", e) }
             }
@@ -164,6 +190,14 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
         fun writeToInternet(data: ByteArray) {
             try {
                 channel?.write(ByteBuffer.wrap(data))
+                // Send ACK back to client for the data
+                val ack = TcpPacketBuilder.buildPacket(
+                    srcIp = serverIp, destIp = clientIp,
+                    srcPort = serverPort, destPort = clientPort,
+                    seqNum = serverSeqNum, ackNum = clientSeqNum,
+                    flags = 0x10 // ACK
+                )
+                onResponse(originId, ack)
             } catch (e: Exception) { Log.e("NAT", "TCP Write failed", e) }
         }
 
@@ -172,7 +206,18 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
                 val buf = ByteBuffer.allocate(16384)
                 val read = channel?.read(buf)
                 if (read != null && read > 0) {
-                    onResponse(originId, buf.array().copyOf(read))
+                    val payload = buf.array().copyOf(read)
+                    
+                    // Send DATA (PSH-ACK) back to client
+                    val pshAck = TcpPacketBuilder.buildPacket(
+                        srcIp = serverIp, destIp = clientIp,
+                        srcPort = serverPort, destPort = clientPort,
+                        seqNum = serverSeqNum, ackNum = clientSeqNum,
+                        flags = 0x18, // PSH + ACK
+                        payload = payload
+                    )
+                    onResponse(originId, pshAck)
+                    serverSeqNum += read
                 } else if (read == -1) {
                     close()
                 }
