@@ -97,9 +97,9 @@ If you have at least 8GB of RAM, you can build locally:
 
 ## 🚧 Future Roadmap (Phases 6-7)
 
--   [ ] **Multi-hop Routing**: Currently, nodes must be in direct range of the Gateway. We plan to implement a distance-vector routing protocol (like AODV) to allow nodes to act as relays.
--   [ ] **User-space NAT (Tun2Socks)**: Integrating a robust NAT engine on the Gateway to handle thousands of concurrent connections.
--   [ ] **Mesh Status Dashboard**: A real-time visual map of the mesh topology within the app.
+-   [*] **Multi-hop Routing**: Currently, nodes must be in direct range of the Gateway. We plan to implement a distance-vector routing protocol (like AODV) to allow nodes to act as relays.
+-   [*] **User-space NAT (Tun2Socks)**: Integrating a robust NAT engine on the Gateway to handle thousands of concurrent connections.
+-   [*] **Mesh Status Dashboard**: A real-time visual map of the mesh topology within the app.
 
 ---
 
