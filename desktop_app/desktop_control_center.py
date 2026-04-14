@@ -52,6 +52,8 @@ class MeshDesktopApp:
 
         self.status_display = scrolledtext.ScrolledText(self.status_frame, state='disabled')
         self.status_display.pack(expand=True, fill='both', padx=5, pady=5)
+        
+        ttk.Label(self.status_frame, text="Reticulum Stack: Active", foreground="green").pack(pady=2)
 
         # Settings Tab
         self.settings_frame = ttk.Frame(self.notebook)
