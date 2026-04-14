@@ -12,25 +12,18 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.google.android.gms.nearby.connection.ConnectionInfo
-import com.google.android.gms.nearby.connection.ConnectionResolution
-import com.google.android.gms.nearby.connection.Payload
 import com.zaiah.meshapp.databinding.ActivityMainBinding
-import com.zaiah.meshapp.network.NearbyConnectionManager
-import com.zaiah.meshapp.network.MeshVpnService
 
-class MainActivity : AppCompatActivity(), NearbyConnectionManager.ConnectionListener {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var meshManager: NearbyConnectionManager
-    private var isGateway = false
+    private val meshApp get() = MeshApp.instance
 
     private val vpnRequestLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            startService(Intent(this, MeshVpnService::class.java))
-            Toast.makeText(this, "VPN Tunnel active", Toast.LENGTH_SHORT).show()
+            startVpnService()
         }
     }
 
@@ -48,51 +41,53 @@ class MainActivity : AppCompatActivity(), NearbyConnectionManager.ConnectionList
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        meshManager = NearbyConnectionManager(this, this)
-
         binding.btnStartMesh.setOnClickListener {
             checkAndRequestPermissions()
         }
 
         binding.btnShareInternet.setOnClickListener {
-            isGateway = !isGateway
-            binding.btnShareInternet.text = if (isGateway) "Gateway Mode: ON" else "Become Gateway"
-            if (!isGateway) {
-                // If not gateway, we act as a client needing VPN
-                val vpnIntent = VpnService.prepare(this)
-                if (vpnIntent != null) {
-                    vpnRequestLauncher.launch(vpnIntent)
-                } else {
-                    startService(Intent(this, MeshVpnService::class.java))
-                }
+            meshApp.isGateway = !meshApp.isGateway
+            binding.btnShareInternet.text = if (meshApp.isGateway) "Gateway Mode: ON" else "Become Gateway"
+            if (!meshApp.isGateway) {
+                prepareVpn()
             }
+        }
+        
+        // Start a simple UI update loop for the dashboard
+        startDashboardUpdates()
+    }
+
+    private fun startVpnService() {
+        startService(Intent(this, com.zaiah.meshapp.network.MeshVpnService::class.java))
+        Toast.makeText(this, "VPN Tunnel active", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun prepareVpn() {
+        val vpnIntent = VpnService.prepare(this)
+        if (vpnIntent != null) {
+            vpnRequestLauncher.launch(vpnIntent)
+        } else {
+            startVpnService()
         }
     }
 
     private fun setupMesh() {
-        meshManager.startMesh(Build.MODEL)
+        meshApp.meshManager.startMesh(Build.MODEL)
         binding.textViewStatus.text = "Status: Mesh Active (Searching...)"
     }
 
-    override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
-        Log.d("Mesh", "Connecting to ${info.endpointName}")
-    }
-
-    override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-        if (result.status.isSuccess) {
-            binding.textViewStatus.text = "Status: Connected to Mesh"
-        }
-    }
-
-    override fun onDisconnected(endpointId: String) {
-        binding.textViewStatus.text = "Status: Disconnected from Mesh"
-    }
-
-    override fun onPayloadReceived(endpointId: String, payload: Payload) {
-        if (payload.type == Payload.Type.BYTES) {
-            val message = String(payload.asBytes()!!)
-            Toast.makeText(this, "Message: $message", Toast.LENGTH_SHORT).show()
-        }
+    private fun startDashboardUpdates() {
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(object : Runnable {
+            override fun run() {
+                val stats = "Neighbors: ${meshApp.neighbors.size}\nRoutes: ${meshApp.routes.size}\n" +
+                        meshApp.routes.values.joinToString("\n") { 
+                            "-> ${it.destinationId} via ${it.nextHopId} (${it.hopCount} hops)" 
+                        }
+                // We'll log it for now, can be put in a TextView if added
+                Log.d("Dashboard", stats)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this, 5000)
+            }
+        }, 5000)
     }
 
     private fun checkAndRequestPermissions() {
@@ -124,10 +119,5 @@ class MainActivity : AppCompatActivity(), NearbyConnectionManager.ConnectionList
         } else {
             setupMesh()
         }
-    }
-
-    override fun onDestroy() {
-        meshManager.stopAll()
-        super.onDestroy()
     }
 }

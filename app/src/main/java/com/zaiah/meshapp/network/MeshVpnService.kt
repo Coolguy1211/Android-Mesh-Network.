@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.zaiah.meshapp.MeshApp
+import com.zaiah.meshapp.network.models.MeshPacket
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -29,8 +31,8 @@ class MeshVpnService : VpnService() {
 
         val builder = Builder()
             .setSession("MeshVPN")
-            .addAddress("10.0.0.2", 32) // Virtual IP for the client
-            .addRoute("0.0.0.0", 0)    // Route all traffic through the VPN
+            .addAddress("10.0.0.2", 32)
+            .addRoute("0.0.0.0", 0)
             .setMtu(1500)
 
         vpnInterface = builder.establish()
@@ -44,19 +46,23 @@ class MeshVpnService : VpnService() {
 
     private fun runVpnTunnel() {
         val inputStream = FileInputStream(vpnInterface?.fileDescriptor)
-        val outputStream = FileOutputStream(vpnInterface?.fileDescriptor)
         val buffer = ByteBuffer.allocate(32767)
 
         while (isRunning) {
             val length = inputStream.read(buffer.array())
             if (length > 0) {
-                // Here we have a raw IP packet in buffer.array() with 'length'
-                // This packet should be sent over the mesh to the Gateway.
-                Log.d("VPN", "Captured packet: $length bytes")
-                
-                // TODO: Send packet to Gateway via NearbyConnectionManager
-                // This would likely involve broadcasting the packet or sending it
-                // to a specific Gateway node ID.
+                // Find a Gateway in our routing table
+                val gatewayId = MeshApp.instance.routes.values.find { 
+                    // Assume the Gateway node's ID starts with "Gateway" or similar
+                    // In a real app, nodes would broadcast their capabilities
+                    true // For now, we'll try to send to any available route
+                }?.destinationId ?: "BROADCAST"
+
+                MeshApp.instance.meshManager.sendToNode(
+                    gatewayId, 
+                    buffer.array().copyOf(length), 
+                    MeshPacket.PacketType.VPN_IP_PACKET
+                )
             }
             buffer.clear()
         }
