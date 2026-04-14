@@ -1,7 +1,7 @@
 package com.zaiah.meshapp.network
 
 import com.zaiah.meshapp.MeshApp
-import fi.iki.elharo.nanohttpd.NanoHTTPD
+import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,7 +23,6 @@ class MeshWebServer(port: Int = 8080) : NanoHTTPD(port) {
     private fun serveStatus(): Response {
         val json = JSONObject()
         json.put("isGateway", MeshApp.instance.isGateway)
-        json.put("nodeId", "TODO: Get Local ID")
         json.put("neighborCount", MeshApp.instance.neighbors.size)
         json.put("routeCount", MeshApp.instance.routes.size)
         return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
