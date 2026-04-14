@@ -7,6 +7,9 @@ import com.zaiah.meshapp.network.MeshWebServer
 import com.zaiah.meshapp.network.models.MeshPacket
 import com.zaiah.meshapp.network.models.RouteEntry
 import com.zaiah.meshapp.network.UserSpaceNAT
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import java.io.File
 
 class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
 
@@ -15,6 +18,9 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
     var vpnService: MeshVpnService? = null
     var webServer: MeshWebServer? = null
     
+    // Reticulum Bridge
+    private var reticulumModule: com.chaquo.python.PyObject? = null
+
     // Topology data for UI
     var neighbors = setOf<String>()
     var routes = mapOf<String, RouteEntry>()
@@ -37,6 +43,12 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        
+        // 1. Start Python
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(this))
+        }
+        
         meshManager = NearbyConnectionManager(this, this)
         nat = UserSpaceNAT { originId, data ->
             // Send response back over mesh
@@ -46,6 +58,33 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
         try {
             webServer = com.zaiah.meshapp.network.MeshWebServer(8080)
             webServer?.start()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Start Reticulum
+        startReticulum()
+    }
+
+    private fun startReticulum() {
+        try {
+            val py = Python.getInstance()
+            reticulumModule = py.getModule("reticulum_bridge")
+            
+            // Bridge object to pass to Python
+            val bridge = object {
+                @com.chaquo.python.PySerializable
+                fun sendNearbyPacket(data: ByteArray) {
+                    // This is called by Reticulum to send data OUT
+                    meshManager.sendToNode("BROADCAST", data, MeshPacket.PacketType.RETICULUM_PACKET)
+                }
+            }
+            
+            val configPath = File(filesDir, "reticulum").apply { mkdirs() }.absolutePath
+            
+            Thread {
+                reticulumModule?.callAttr("start_reticulum", bridge, configPath)
+            }.start()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -76,6 +115,9 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
             )
             chatMessages.add(msg)
             chatListener?.invoke(msg)
+        } else if (packet.type == MeshPacket.PacketType.RETICULUM_PACKET) {
+            // Forward mesh data TO Reticulum
+            reticulumModule?.callAttr("inject_packet", packet.data)
         }
     }
     override fun onTopologyUpdated(neighbors: Set<String>, routes: Map<String, RouteEntry>) {
