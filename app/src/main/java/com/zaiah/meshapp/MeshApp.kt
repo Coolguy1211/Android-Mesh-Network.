@@ -3,6 +3,7 @@ package com.zaiah.meshapp
 import android.app.Application
 import com.zaiah.meshapp.network.NearbyConnectionManager
 import com.zaiah.meshapp.network.MeshVpnService
+import com.zaiah.meshapp.network.MeshWebServer
 import com.zaiah.meshapp.network.models.MeshPacket
 import com.zaiah.meshapp.network.models.RouteEntry
 import com.zaiah.meshapp.network.UserSpaceNAT
