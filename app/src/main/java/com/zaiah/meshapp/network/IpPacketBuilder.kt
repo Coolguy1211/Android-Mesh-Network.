@@ -1,11 +1,14 @@
 package com.zaiah.meshapp.network
 
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Utility to construct raw IPv4 + TCP/UDP packets to send back to the VpnService's TUN interface.
  */
 object IpPacketBuilder {
+
+    private val ipIdCounter = AtomicInteger(0)
 
     fun buildTcpPacket(
         srcIp: ByteArray,
@@ -107,7 +110,7 @@ object IpPacketBuilder {
         buffer.put((0x45).toByte()) // Version 4, IHL 5
         buffer.put(0) // TOS
         buffer.putShort(totalLen.toShort()) // Total Length
-        buffer.putShort(System.currentTimeMillis().toInt().toShort()) // Identification (Randomized somewhat)
+        buffer.putShort((ipIdCounter.getAndIncrement() and 0xFFFF).toShort()) // Identification
         buffer.putShort(0x4000.toShort()) // Flags & Fragment Offset (Don't Fragment)
         buffer.put(64) // TTL
         buffer.put(protocol.toByte()) // Protocol
