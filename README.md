@@ -1,87 +1,109 @@
-# Android Mesh Network App
+# 📱 Android Mesh Network - Deep Technical Documentation
 
-A robust Android application that forms an offline mesh network using WiFi and Bluetooth to enable messaging, file sharing, and transparent internet sharing.
+An advanced Android application that forms a high-performance, decentralized mesh network using **WiFi Direct**, **Bluetooth Low Energy (BLE)**, and **Classic Bluetooth**. This project enables offline communication and transparent, device-wide internet sharing through a mesh-routed VPN tunnel.
 
-## 📊 Architecture Diagram
+---
+
+## 📊 Architecture & Data Flow
 
 ```text
-       ┌────────────────────────┐
-       │     "REAL" INTERNET    │
-       └───────────┬────────────┘
-                   │ (WiFi/Cellular)
-                   ▼
-       ┌────────────────────────┐
-       │     GATEWAY NODE       │
-       │ (Phone with Internet)  │◀──┐
-       └───────────┬────────────┘   │
-                   │ (Nearby API)   │ (Mesh Network)
-         ┌─────────┴─────────┐      │
-         ▼                   ▼      │
-┌────────────────┐  ┌────────────────┐  │
-│   CLIENT NODE  │  │   CLIENT NODE  │  │
-│ (VpnService)   │  │ (VpnService)   │◀─┘
-└────────┬───────┘  └────────┬───────┘
-         │                   │
-         └─────▶ MESH ◀──────┘
-         (Text / Files / VPN)
+                                  ┌────────────────────────┐
+                                  │      THE INTERNET      │
+                                  └───────────┬────────────┘
+                                              │ (WiFi/Cellular)
+                                              ▼
+                                  ┌────────────────────────┐
+                                  │      GATEWAY NODE      │
+                                  │ (Internet Connection)  │◀─────┐
+                                  └───────────┬────────────┘      │
+                                              │                   │
+                     ┌────────────────────────┴───────────────────┴────────────────────────┐
+                     │                 NEARBY CONNECTIONS (P2P_CLUSTER)                     │
+                     └─────────────┬───────────────────────────────┬────────────────────────┘
+                                   │                               │
+                      ┌────────────▼────────────┐     ┌────────────▼────────────┐
+                      │      CLIENT NODE A      │     │      CLIENT NODE B      │
+                      │   (Active VpnService)   │     │   (Active VpnService)   │
+                      └────────────┬────────────┘     └────────────┬────────────┘
+                                   │                               │
+                                   └───────────────┬───────────────┘
+                                                   ▼
+                                         DECENTRALIZED MESH
+                                     (Text / Files / IP Packets)
 ```
 
-### Data Flow Explanation
-1.  **Mesh Formation**: Phones discover each other via **Bluetooth/BLE** and upgrade to high-speed **WiFi Direct** automatically using the Nearby Connections API.
-2.  **Messaging/Files**: Data is sent as "Payloads" directly between nodes.
-3.  **Internet Sharing**:
-    -   **Client Node**: Runs a `VpnService` that captures all IP packets from the system.
-    -   **Tunneling**: These packets are sent over the Mesh (Nearby API) to the **Gateway**.
-    -   **Routing**: The Gateway forwards packets to the internet and sends responses back to the Client.
+---
 
+## 🛠 Deep Dive: Core Technologies
 
--   **P2P Mesh Networking**: Uses Google's Nearby Connections API (`STRATEGY_P2P_CLUSTER`) to form an M-to-N mesh network automatically over Bluetooth, BLE, and WiFi Direct.
--   **Offline Texting**: Send and receive real-time text messages across the mesh without cellular data or external WiFi.
--   **High-Speed File Sharing**: Optimized high-bandwidth file transfers using WiFi Direct.
--   **Internet Sharing (Gateway Mode)**: 
-    -   One device connected to "real" WiFi acts as a **Gateway**.
-    -   Other devices connect to the Gateway via the mesh and route their entire device-level traffic through a custom **VPN Tunnel** (`VpnService`).
+### 1. Mesh Formation (Google Nearby Connections)
+The app uses the `STRATEGY_P2P_CLUSTER` topology, which is a peer-to-peer strategy that supports a many-to-many connection.
+*   **Discovery**: Devices scan via BLE and Bluetooth to find peers.
+*   **Bandwidth Upgrade**: Once a connection is established over Bluetooth, the API automatically negotiates a high-speed WiFi Direct (P2P) or WiFi Hotspot link for data transfer.
+*   **Decentralization**: There is no single master. Any device can connect to any other device, forming a web of connections.
 
-## 🛠 Tech Stack
+### 2. Transparent Internet Sharing (VPN Tunneling)
+This is the most complex part of the application. It bypasses the need for tethering/hotspotting which is often blocked by carriers.
+*   **The Client**: Runs an Android `VpnService`. This creates a virtual network interface (TUN) on the device. All system traffic (Chrome, YouTube, Spotify) is intercepted by our app as raw IP packets.
+*   **The Tunnel**: The app reads these packets from the TUN interface, encapsulates them into `Payload.BYTES`, and sends them across the mesh to the Gateway.
+*   **The Gateway**: Receives the raw IP packets. It must perform **User-space NAT (Network Address Translation)**. It opens standard TCP/UDP sockets to the real internet, forwards the data, and then encapsulates the responses to send back to the client.
 
--   **Language**: Kotlin
--   **Minimum SDK**: Android 7.0 (API 24)
--   **Target SDK**: Android 14 (API 34)
--   **Core Libraries**: 
-    -   `com.google.android.gms:play-services-nearby` (Nearby Connections)
-    -   `androidx.core:core-ktx`
-    -   `androidx.appcompat:appcompat`
+### 3. Messaging & File System
+*   **Texting**: Uses small byte payloads. Messages are broadcast to all connected endpoints in the cluster.
+*   **Files**: Uses the `Payload.Type.FILE` system. This is extremely efficient because the Nearby API handles the streaming and avoids loading the entire file into memory.
 
-## 🏗 Project Structure
+---
 
--   `MainActivity.kt`: UI logic and permission handling.
--   `network/NearbyConnectionManager.kt`: Core mesh formation and payload (Bytes/Files) handling.
--   `network/MeshVpnService.kt`: Android VpnService implementation for capturing and routing device-wide network traffic.
+## 📡 Networking Protocols
 
-## 📦 How to Build
+| Feature | Protocol | Hardware |
+| :--- | :--- | :--- |
+| **Discovery** | BLE / mDNS | Bluetooth / WiFi |
+| **Mesh Link** | WiFi Direct / P2P | WiFi Radio |
+| **VPN Tunnel** | Raw IPv4/IPv6 Packets | Virtual TUN Interface |
+| **Control Plane** | Nearby Connections API | System Service |
 
-This project is configured with **GitHub Actions** for easy building:
-1.  Push code to your repository.
-2.  Go to the **Actions** tab on GitHub.
-3.  Download the `app-debug` artifact once the build is complete.
+---
 
-Alternatively, to build locally:
-```bash
+## ⚙️ Detailed Setup & Build Instructions
+
+### Prerequisites
+*   Android Studio Ladybug (or newer)
+*   JDK 17
+*   At least two physical Android devices (Emulators do not support Bluetooth/WiFi Direct)
+
+### GitHub Actions Build (Recommended)
+This project is optimized for cloud builds to save local resources:
+1.  Fork this repository.
+2.  Navigate to **Actions**.
+3.  The workflow `Build Android APK` runs on every push.
+4.  Download the result from the **Artifacts** section of the latest run.
+
+### Local CLI Build
+If you have at least 8GB of RAM, you can build locally:
+```powershell
 ./gradlew assembleDebug
 ```
 
-## 📱 Permissions Required
+---
 
-To function as a mesh node, the app requires:
--   Nearby Devices (Bluetooth/WiFi scanning)
--   Fine Location (Required by Android for hardware radio access)
--   VPN Service (For internet sharing)
--   Media/Storage access (For file sharing)
+## 🔒 Security Considerations
 
-## 🤝 Contributing
+*   **Encryption**: Nearby Connections uses TLS encryption for all payloads.
+*   **Sandboxing**: The `VpnService` ensures that traffic is isolated to the virtual interface.
+*   **Privacy**: No data is stored on our servers; the mesh is entirely peer-to-peer.
 
-This is a prototype mesh networking application. Feel free to fork and submit pull requests for features like multi-hop routing or user-space NAT optimization for the Gateway node.
+---
 
-## 📜 License
+## 🚧 Future Roadmap (Phases 6-7)
 
-MIT License - feel free to use this for your own projects!
+-   [ ] **Multi-hop Routing**: Currently, nodes must be in direct range of the Gateway. We plan to implement a distance-vector routing protocol (like AODV) to allow nodes to act as relays.
+-   [ ] **User-space NAT (Tun2Socks)**: Integrating a robust NAT engine on the Gateway to handle thousands of concurrent connections.
+-   [ ] **Mesh Status Dashboard**: A real-time visual map of the mesh topology within the app.
+
+---
+
+## 📜 License & Credits
+
+Distributed under the MIT License. Created by **Coolguy1211**.
+Special thanks to the Google Open Source team for the Nearby Connections API.
