@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">MeshApp</string>
+    <string name="admin_description">Ensures the Mesh Network remains active and persistent on this device.</string>
 </resources>

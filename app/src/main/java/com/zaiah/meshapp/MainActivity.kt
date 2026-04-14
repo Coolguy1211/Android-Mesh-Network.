@@ -1,23 +1,31 @@
 package com.zaiah.meshapp
 
 import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.zaiah.meshapp.databinding.ActivityMainBinding
+import com.zaiah.meshapp.receiver.MeshDeviceAdminReceiver
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val meshApp get() = MeshApp.instance
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val vpnRequestLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -25,6 +33,12 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == RESULT_OK) {
             startVpnService()
         }
+    }
+
+    private val adminRequestLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        checkAdminStatus()
     }
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -41,6 +55,9 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Keep Screen On
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
         binding.btnStartMesh.setOnClickListener {
             checkAndRequestPermissions()
         }
@@ -52,9 +69,52 @@ class MainActivity : AppCompatActivity() {
                 prepareVpn()
             }
         }
+
+        // Request Device Admin and Battery Optimization exclusion
+        requestBatteryOptimizations()
+        requestDeviceAdmin()
+        acquireWakeLock()
         
-        // Start a simple UI update loop for the dashboard
         startDashboardUpdates()
+    }
+
+    private fun checkAdminStatus() {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminName = ComponentName(this, MeshDeviceAdminReceiver::class.java)
+        if (dpm.isAdminActive(adminName)) {
+            Toast.makeText(this, "Admin Active", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requestDeviceAdmin() {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminName = ComponentName(this, MeshDeviceAdminReceiver::class.java)
+        if (!dpm.isAdminActive(adminName)) {
+            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminName)
+                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, getString(R.string.admin_description))
+            }
+            adminRequestLauncher.launch(intent)
+        }
+    }
+
+    private fun requestBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_INT.M) {
+            val intent = Intent()
+            val packageName = packageName
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                intent.data = Uri.parse("package:$packageName")
+                startActivity(intent)
+            }
+        }
+    }
+
+    private fun acquireWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MeshApp::WakeLock")
+        wakeLock?.acquire()
     }
 
     private fun startVpnService() {
@@ -83,7 +143,6 @@ class MainActivity : AppCompatActivity() {
                         meshApp.routes.values.joinToString("\n") { 
                             "-> ${it.destinationId} via ${it.nextHopId} (${it.hopCount} hops)" 
                         }
-                // We'll log it for now, can be put in a TextView if added
                 Log.d("Dashboard", stats)
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this, 5000)
             }
@@ -119,5 +178,10 @@ class MainActivity : AppCompatActivity() {
         } else {
             setupMesh()
         }
+    }
+
+    override fun onDestroy() {
+        wakeLock?.release()
+        super.onDestroy()
     }
 }
