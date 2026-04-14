@@ -10,11 +10,20 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
 
     lateinit var meshManager: NearbyConnectionManager
     var nat: UserSpaceNAT? = null
-    var isGateway = false
     
     // Topology data for UI
     var neighbors = setOf<String>()
     var routes = mapOf<String, RouteEntry>()
+
+    fun setGatewayMode(enabled: Boolean) {
+        meshManager.localRole = if (enabled) com.zaiah.meshapp.network.models.NodeRole.GATEWAY else com.zaiah.meshapp.network.models.NodeRole.CLIENT
+        if (enabled) {
+            meshManager.broadcastRole()
+        }
+    }
+
+    val isGateway: Boolean
+        get() = meshManager.localRole == com.zaiah.meshapp.network.models.NodeRole.GATEWAY
 
     override fun onCreate() {
         super.onCreate()

@@ -63,7 +63,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnShareInternet.setOnClickListener {
-            meshApp.isGateway = !meshApp.isGateway
+            val newMode = !meshApp.isGateway
+            meshApp.setGatewayMode(newMode)
             binding.btnShareInternet.text = if (meshApp.isGateway) "Gateway Mode: ON" else "Become Gateway"
             if (!meshApp.isGateway) {
                 prepareVpn()

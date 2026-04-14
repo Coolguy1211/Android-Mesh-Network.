@@ -1,24 +1,35 @@
 package com.zaiah.meshapp.network
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
 import com.zaiah.meshapp.network.models.MeshPacket
+import com.zaiah.meshapp.network.models.NodeRole
 import com.zaiah.meshapp.network.models.RouteEntry
 import org.json.JSONObject
-import java.io.File
 import java.nio.charset.Charset
 
 class NearbyConnectionManager(private val context: Context, private val listener: ConnectionListener) {
 
     private val connectionsClient = Nearby.getConnectionsClient(context)
-    private val directNeighbors = mutableSetOf<String>() // Direct Bluetooth/WiFi links
+    private val directNeighbors = mutableSetOf<String>()
     private val routingTable = mutableMapOf<String, RouteEntry>()
     
     private val STRATEGY = Strategy.P2P_CLUSTER
     private val SERVICE_ID = "com.zaiah.meshapp.SERVICE_ID"
-    private var localNodeId: String = "" // Will be set on start
+    private var localNodeId: String = ""
+    
+    var localRole: NodeRole = NodeRole.CLIENT
+        set(value) {
+            field = value
+            broadcastRole()
+        }
+
+    private var currentSequenceNum = 0
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     interface ConnectionListener {
         fun onConnectionInitiated(endpointId: String, info: ConnectionInfo)
@@ -26,6 +37,17 @@ class NearbyConnectionManager(private val context: Context, private val listener
         fun onDisconnected(endpointId: String)
         fun onMeshPacketReceived(packet: MeshPacket)
         fun onTopologyUpdated(neighbors: Set<String>, routes: Map<String, RouteEntry>)
+    }
+
+    private val routeCleaner = object : Runnable {
+        override fun run() {
+            val staleKeys = routingTable.filter { it.value.isStale && it.key !in directNeighbors }.keys
+            if (staleKeys.isNotEmpty()) {
+                staleKeys.forEach { routingTable.remove(it) }
+                broadcastTopology()
+            }
+            mainHandler.postDelayed(this, 30000) // 30 seconds
+        }
     }
 
     private val connectionLifecycleCallback = object : ConnectionLifecycleCallback() {
@@ -37,8 +59,8 @@ class NearbyConnectionManager(private val context: Context, private val listener
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
             if (result.status.isSuccess) {
                 directNeighbors.add(endpointId)
-                // Add direct route
-                routingTable[endpointId] = RouteEntry(endpointId, endpointId, 0)
+                routingTable[endpointId] = RouteEntry(endpointId, endpointId, 0, 0, NodeRole.CLIENT)
+                broadcastRole()
                 broadcastTopology()
             }
             listener.onConnectionResult(endpointId, result)
@@ -47,10 +69,8 @@ class NearbyConnectionManager(private val context: Context, private val listener
         override fun onDisconnected(endpointId: String) {
             directNeighbors.remove(endpointId)
             routingTable.remove(endpointId)
-            // Remove all routes using this neighbor as next hop
             val routesToRemove = routingTable.filter { it.value.nextHopId == endpointId }.keys
             routesToRemove.forEach { routingTable.remove(it) }
-            
             broadcastTopology()
             listener.onDisconnected(endpointId)
         }
@@ -63,33 +83,39 @@ class NearbyConnectionManager(private val context: Context, private val listener
                 handleIncomingPacket(packet, endpointId)
             }
         }
-
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {}
     }
 
     private fun handleIncomingPacket(packet: MeshPacket, senderId: String) {
-        // 1. Update routing table (Learning step)
-        updateRoute(packet.originId, senderId, packet.hopCount)
+        // 1. Update routing table using AODV logic
+        updateRoute(packet.originId, senderId, packet.hopCount, packet.sequenceNum, packet.originRole)
 
         // 2. Is it for me?
         if (packet.destinationId == localNodeId || packet.destinationId == "BROADCAST") {
-            if (packet.type == MeshPacket.PacketType.TOPOLOGY_UPDATE) {
-                handleTopologyUpdate(packet)
+            if (packet.type == MeshPacket.PacketType.ROLE_ADVERTISEMENT) {
+                // Role was already learned in updateRoute
+                broadcastTopology()
             } else {
                 listener.onMeshPacketReceived(packet)
             }
         }
 
         // 3. Should I forward it?
-        if (packet.destinationId != localNodeId && packet.hopCount < 10) {
+        if (packet.destinationId != localNodeId && packet.hopCount < 15) { // Max TTL 15
             forwardPacket(packet)
         }
     }
 
-    private fun updateRoute(destId: String, nextHop: String, currentHopCount: Int) {
+    private fun updateRoute(destId: String, nextHop: String, currentHopCount: Int, seqNum: Int, role: NodeRole) {
         val existingRoute = routingTable[destId]
-        if (existingRoute == null || existingRoute.hopCount > (currentHopCount + 1)) {
-            routingTable[destId] = RouteEntry(destId, nextHop, currentHopCount + 1)
+        
+        // AODV sequence number and hop count logic
+        val isNewer = existingRoute == null || 
+                      seqNum > existingRoute.sequenceNum || 
+                      (seqNum == existingRoute.sequenceNum && currentHopCount + 1 < existingRoute.hopCount)
+
+        if (isNewer || existingRoute?.nextHopId == nextHop) {
+            routingTable[destId] = RouteEntry(destId, nextHop, currentHopCount + 1, seqNum, role)
             broadcastTopology()
         }
     }
@@ -100,7 +126,6 @@ class NearbyConnectionManager(private val context: Context, private val listener
             val forwardedPacket = packet.copy(hopCount = packet.hopCount + 1)
             sendDirect(nextHop, forwardedPacket)
         } else if (packet.destinationId == "BROADCAST") {
-            // Re-broadcast to all neighbors except origin
             val forwardedPacket = packet.copy(hopCount = packet.hopCount + 1)
             directNeighbors.forEach { neighbor ->
                 if (neighbor != packet.originId) {
@@ -111,7 +136,8 @@ class NearbyConnectionManager(private val context: Context, private val listener
     }
 
     fun startMesh(nickname: String) {
-        localNodeId = nickname // Using nickname as ID for now
+        localNodeId = nickname
+        mainHandler.post(routeCleaner)
         startAdvertising(nickname)
         startDiscovery()
     }
@@ -131,8 +157,29 @@ class NearbyConnectionManager(private val context: Context, private val listener
         }, options)
     }
 
+    fun broadcastRole() {
+        currentSequenceNum++
+        val packet = MeshPacket(
+            originId = localNodeId, 
+            destinationId = "BROADCAST", 
+            type = MeshPacket.PacketType.ROLE_ADVERTISEMENT, 
+            sequenceNum = currentSequenceNum,
+            originRole = localRole,
+            data = ByteArray(0)
+        )
+        directNeighbors.forEach { sendDirect(it, packet) }
+    }
+
     fun sendToNode(destId: String, data: ByteArray, type: MeshPacket.PacketType) {
-        val packet = MeshPacket(localNodeId, destId, type = type, data = data)
+        currentSequenceNum++
+        val packet = MeshPacket(
+            originId = localNodeId, 
+            destinationId = destId, 
+            type = type, 
+            sequenceNum = currentSequenceNum,
+            originRole = localRole,
+            data = data
+        )
         if (destId == "BROADCAST") {
             directNeighbors.forEach { sendDirect(it, packet) }
         } else {
@@ -146,12 +193,7 @@ class NearbyConnectionManager(private val context: Context, private val listener
     }
 
     private fun broadcastTopology() {
-        // Periodically share routes with neighbors
         listener.onTopologyUpdated(directNeighbors, routingTable)
-    }
-
-    private fun handleTopologyUpdate(packet: MeshPacket) {
-        // Advanced: Merge routing tables from neighbors
     }
 
     private fun serializePacket(packet: MeshPacket): ByteArray {
@@ -160,6 +202,8 @@ class NearbyConnectionManager(private val context: Context, private val listener
         json.put("dest", packet.destinationId)
         json.put("type", packet.type.name)
         json.put("hops", packet.hopCount)
+        json.put("seq", packet.sequenceNum)
+        json.put("role", packet.originRole.name)
         json.put("data", android.util.Base64.encodeToString(packet.data, android.util.Base64.DEFAULT))
         return json.toString().toByteArray(Charset.forName("UTF-8"))
     }
@@ -172,6 +216,8 @@ class NearbyConnectionManager(private val context: Context, private val listener
                 destinationId = json.getString("dest"),
                 type = MeshPacket.PacketType.valueOf(json.getString("type")),
                 hopCount = json.getInt("hops"),
+                sequenceNum = json.optInt("seq", 0),
+                originRole = NodeRole.valueOf(json.optString("role", "CLIENT")),
                 data = android.util.Base64.decode(json.getString("data"), android.util.Base64.DEFAULT)
             )
         } catch (e: Exception) {
@@ -180,6 +226,7 @@ class NearbyConnectionManager(private val context: Context, private val listener
     }
 
     fun stopAll() {
+        mainHandler.removeCallbacks(routeCleaner)
         connectionsClient.stopAdvertising()
         connectionsClient.stopDiscovery()
         connectionsClient.stopAllEndpoints()

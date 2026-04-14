@@ -53,9 +53,7 @@ class MeshVpnService : VpnService() {
             if (length > 0) {
                 // Find a Gateway in our routing table
                 val gatewayId = MeshApp.instance.routes.values.find { 
-                    // Assume the Gateway node's ID starts with "Gateway" or similar
-                    // In a real app, nodes would broadcast their capabilities
-                    true // For now, we'll try to send to any available route
+                    it.role == com.zaiah.meshapp.network.models.NodeRole.GATEWAY
                 }?.destinationId ?: "BROADCAST"
 
                 MeshApp.instance.meshManager.sendToNode(

@@ -2,6 +2,12 @@ package com.zaiah.meshapp.network.models
 
 import java.io.Serializable
 
+enum class NodeRole {
+    CLIENT,
+    RELAY,
+    GATEWAY
+}
+
 /**
  * Represents a packet sent over the mesh.
  * This allows for multi-hop routing by specifying origin and destination.
@@ -12,13 +18,16 @@ data class MeshPacket(
     val packetId: Long = System.currentTimeMillis(),
     val type: PacketType,
     val hopCount: Int = 0,
+    val sequenceNum: Int = 0,
+    val originRole: NodeRole = NodeRole.CLIENT,
     val data: ByteArray
 ) : Serializable {
     enum class PacketType {
         TEXT,
         VPN_IP_PACKET,
         ROUTING_CONTROL, // Used for route discovery
-        TOPOLOGY_UPDATE  // Used for the dashboard
+        TOPOLOGY_UPDATE, // Used for the dashboard
+        ROLE_ADVERTISEMENT // Used for gateways to announce themselves
     }
 
     override fun equals(other: Any?): Boolean {
@@ -36,11 +45,16 @@ data class MeshPacket(
 }
 
 /**
- * A simple routing table entry.
+ * A simple routing table entry with AODV-style sequence numbers and route aging.
  */
 data class RouteEntry(
     val destinationId: String,
     val nextHopId: String,
     val hopCount: Int,
-    val timestamp: Long = System.currentTimeMillis()
-)
+    val sequenceNum: Int,
+    val role: NodeRole = NodeRole.CLIENT,
+    var timestamp: Long = System.currentTimeMillis()
+) {
+    val isStale: Boolean
+        get() = (System.currentTimeMillis() - timestamp) > 60000 // 60 seconds
+}

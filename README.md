@@ -94,12 +94,45 @@ This project is optimized for cloud builds:
 
 ---
 
-## 🚧 Future Roadmap
+## 🚧 Future Roadmap & Next Steps
 
--   [x] **TCP Support**: Implemented via NIO SocketChannels.
--   [x] **Persistence**: Implemented via Device Admin & Launcher mode.
--   [ ] **Full IP Wrapping**: Wrapping internet responses back into IPv4 headers for seamless client-side injection.
--   [ ] **Mesh Status Dashboard**: A real-time visual map of the mesh topology.
+This project is evolving towards a stable, real-world decentralized infrastructure system. Here are the high-impact priorities:
+
+### 🔥 1. Improve TCP Reliability
+- Handle retransmissions and packet loss.
+- Support out-of-order packet reassembly.
+- Add basic congestion control awareness.
+- Fully integrate a `tun2socks`-style approach or custom TCP/IP stack for seamless HTTPS browsing and app traffic.
+
+### 🔁 2. Enhance Routing Protocol
+- **Route Aging:** Expire and remove stale routes automatically.
+- **Sequence Numbers:** Prevent routing loops using an AODV-style protocol.
+- **Link Quality:** Route based on latency and signal strength metrics instead of just hop count.
+
+### 🌐 3. Gateway Discovery & Role Advertisement
+- Nodes actively broadcast their capabilities (`GATEWAY`, `RELAY`, `CLIENT`).
+- Clients automatically select the lowest-latency/lowest-hop gateway.
+- Support multiple gateways for failover and load balancing.
+
+### 📡 4. Topology Propagation
+- Share routing table summaries across the mesh to build a global distributed view.
+- Optimize routes based on global knowledge, enabling visual network dashboards.
+
+### 🔐 5. Optional End-to-End Encryption
+- Implement E2E encryption between client and gateway using lightweight key exchange.
+- Encrypt payloads *before* NAT forwarding to ensure privacy in untrusted environments.
+
+### ⚡ 6. Power & Performance Modes
+- Add adaptive power profiles (Low-power relay mode vs. High-performance gateway mode).
+- Smart WakeLock control based on battery levels to prevent long-term drain.
+
+### 🗺️ 7. Mesh Visualization Dashboard
+- Live node graph displaying connections, hops, and routes.
+- Latency and bandwidth indicators within the UI.
+
+### 🧪 8. Testing & Validation Tools
+- Built-in ping tool for node-to-node latency testing.
+- Packet logging/debug mode and simulated network condition testing.
 
 ---
 
