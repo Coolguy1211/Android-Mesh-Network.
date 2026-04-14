@@ -60,3 +60,10 @@ data class RouteEntry(
     val isStale: Boolean
         get() = (System.currentTimeMillis() - timestamp) > 60000 // 60 seconds
 }
+
+data class ChatMessage(
+    val senderId: String,
+    val message: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val isSentByMe: Boolean
+) : Serializable

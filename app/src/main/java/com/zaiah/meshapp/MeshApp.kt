@@ -20,8 +20,9 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
     var routes = mapOf<String, RouteEntry>()
     
     // Chat data
-    var chatMessages = mutableListOf<String>()
-    var chatListener: ((String) -> Unit)? = null
+    var chatMessages = mutableListOf<com.zaiah.meshapp.network.models.ChatMessage>()
+    var chatListener: ((com.zaiah.meshapp.network.models.ChatMessage) -> Unit)? = null
+    var localNodeId: String = ""
 
     fun setGatewayMode(enabled: Boolean) {
         meshManager.localRole = if (enabled) com.zaiah.meshapp.network.models.NodeRole.GATEWAY else com.zaiah.meshapp.network.models.NodeRole.CLIENT
@@ -67,7 +68,12 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
                 vpnService?.injectPacket(packet.data)
             }
         } else if (packet.type == MeshPacket.PacketType.TEXT) {
-            val msg = String(packet.data, java.nio.charset.Charset.forName("UTF-8"))
+            val text = String(packet.data, java.nio.charset.Charset.forName("UTF-8"))
+            val msg = com.zaiah.meshapp.network.models.ChatMessage(
+                senderId = packet.originId,
+                message = text,
+                isSentByMe = false
+            )
             chatMessages.add(msg)
             chatListener?.invoke(msg)
         }

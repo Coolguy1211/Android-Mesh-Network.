@@ -51,6 +51,11 @@
             </intent-filter>
         </activity>
 
+        <activity 
+            android:name=".ChatActivity"
+            android:label="Mesh Chat"
+            android:parentActivityName=".MainActivity" />
+
         <!-- Device Admin Receiver -->
         <receiver
             android:name=".receiver.MeshDeviceAdminReceiver"

@@ -69,9 +69,14 @@ class NearbyConnectionManager(private val context: Context, private val listener
 
         override fun onDisconnected(endpointId: String) {
             directNeighbors.remove(endpointId)
-            routingTable.remove(endpointId)
+            
+            // AGGRESSIVE CLEANUP: Remove ALL routes that rely on this endpoint as the next hop
             val routesToRemove = routingTable.filter { it.value.nextHopId == endpointId }.keys
             routesToRemove.forEach { routingTable.remove(it) }
+            
+            // Also remove the direct route to the endpoint itself
+            routingTable.remove(endpointId)
+            
             broadcastTopology()
             listener.onDisconnected(endpointId)
         }
@@ -167,16 +172,24 @@ class NearbyConnectionManager(private val context: Context, private val listener
         }
     }
 
+    var isCompatibilityMode = false // If true, only discover, don't advertise
+
     fun startMesh(nickname: String) {
         localNodeId = nickname
         mainHandler.post(routeCleaner)
-        startAdvertising(nickname)
+        if (!isCompatibilityMode) {
+            startAdvertising(nickname)
+        }
         startDiscovery()
     }
 
     private fun startAdvertising(nickname: String) {
         val options = AdvertisingOptions.Builder().setStrategy(STRATEGY).build()
         connectionsClient.startAdvertising(nickname, SERVICE_ID, connectionLifecycleCallback, options)
+            .addOnFailureListener {
+                Log.e("Mesh", "Advertising failed. Auto-switching to Compatibility Mode.")
+                isCompatibilityMode = true
+            }
     }
 
     private fun startDiscovery() {

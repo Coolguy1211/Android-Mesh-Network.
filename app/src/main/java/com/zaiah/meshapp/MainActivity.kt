@@ -19,16 +19,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.zaiah.meshapp.databinding.ActivityMainBinding
-import com.zaiah.meshapp.network.models.MeshPacket
 import com.zaiah.meshapp.receiver.MeshDeviceAdminReceiver
-import java.nio.charset.Charset
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val meshApp get() = MeshApp.instance
     private var wakeLock: PowerManager.WakeLock? = null
-    private var localNodeId: String = ""
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -44,11 +41,12 @@ class MainActivity : AppCompatActivity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // Generate unique node ID to prevent collisions with identical phone models
-        val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "Unknown"
-        localNodeId = "${Build.MODEL}-${androidId.takeLast(4)}"
+        // Generate unique node ID
+        if (meshApp.localNodeId.isEmpty()) {
+            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "Unknown"
+            meshApp.localNodeId = "${Build.MODEL}-${androidId.takeLast(4)}"
+        }
 
-        // Initial check
         updatePermissionUi(hasAllPermissions())
 
         binding.btnStartMesh.setOnClickListener {
@@ -66,39 +64,9 @@ class MainActivity : AppCompatActivity() {
             if (!meshApp.isGateway) prepareVpn()
         }
 
-        // Setup Chat UI
-        binding.btnSendChat.setOnClickListener {
-            val text = binding.inputChat.text.toString()
-            if (text.isNotBlank()) {
-                val msg = "[$localNodeId]: $text"
-                appendChat(msg)
-                meshApp.meshManager.sendToNode(
-                    "BROADCAST",
-                    msg.toByteArray(Charset.forName("UTF-8")),
-                    MeshPacket.PacketType.TEXT
-                )
-                binding.inputChat.text.clear()
-            }
-        }
-
-        // Listen for incoming chat messages
-        meshApp.chatListener = { msg ->
-            runOnUiThread { appendChat(msg) }
-        }
-
-        requestPersistence()
+        // Dashboard Updates
         startDashboardUpdates()
-        
-        // Restore old chat messages if any
-        binding.textViewChat.text = "--- Chat Started ---\n" + meshApp.chatMessages.joinToString("\n")
-    }
-
-    private fun appendChat(msg: String) {
-        val current = binding.textViewChat.text.toString()
-        binding.textViewChat.text = "$current\n$msg"
-        binding.chatScrollView.post {
-            binding.chatScrollView.fullScroll(android.view.View.FOCUS_DOWN)
-        }
+        requestPersistence()
     }
 
     private fun hasAllPermissions(): Boolean {
@@ -152,9 +120,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupMesh() {
-        meshApp.meshManager.startMesh(localNodeId)
+        meshApp.meshManager.startMesh(meshApp.localNodeId)
         binding.textViewStatus.text = "Mesh Active"
         binding.btnStartMesh.isEnabled = false
+        
+        // Add a "Chat" button dynamically or just keep it there
+        binding.btnStartMesh.text = "Open Mesh Chat"
+        binding.btnStartMesh.isEnabled = true
+        binding.btnStartMesh.setOnClickListener {
+            startActivity(Intent(this, ChatActivity::class.java))
+        }
+
         Toast.makeText(this, "Mesh Discovery Started", Toast.LENGTH_SHORT).show()
     }
 
@@ -163,8 +139,9 @@ class MainActivity : AppCompatActivity() {
         handler.post(object : Runnable {
             override fun run() {
                 val stats = StringBuilder()
-                stats.append("LOCAL NODE: $localNodeId\n")
+                stats.append("LOCAL NODE: ${meshApp.localNodeId}\n")
                 stats.append("ROLE: ${if (meshApp.isGateway) "GATEWAY" else "CLIENT"}\n")
+                stats.append("MODE: ${if (meshApp.meshManager.isCompatibilityMode) "COMPATIBILITY" else "FULL MESH"}\n")
                 stats.append("----------------------------\n")
                 stats.append("NEIGHBORS (${meshApp.neighbors.size}):\n")
                 meshApp.neighbors.forEach { stats.append(" • $it\n") }
@@ -179,15 +156,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestPersistence() {
-        // Battery
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !pm.isIgnoringBatteryOptimizations(packageName)) {
-            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
-            startActivity(intent)
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+                startActivity(intent)
+            } catch (e: Exception) {}
         }
-        // WakeLock
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MeshApp::Lock").apply { acquire() }
-        // Admin
         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = ComponentName(this, MeshDeviceAdminReceiver::class.java)
         if (!dpm.isAdminActive(admin)) {
@@ -207,7 +183,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         wakeLock?.release()
-        meshApp.chatListener = null
         super.onDestroy()
     }
 }
