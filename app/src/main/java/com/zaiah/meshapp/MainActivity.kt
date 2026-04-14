@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestBatteryOptimizations() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_INT.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val intent = Intent()
             val packageName = packageName
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -160,7 +160,7 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.ACCESS_NETWORK_STATE
         )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_INT.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
             permissions.add(Manifest.permission.BLUETOOTH_SCAN)
             permissions.add(Manifest.permission.BLUETOOTH_ADVERTISE)
