@@ -10,6 +10,7 @@ import com.zaiah.meshapp.network.models.MeshPacket
 import com.zaiah.meshapp.network.models.NodeRole
 import com.zaiah.meshapp.network.models.RouteEntry
 import org.json.JSONObject
+import org.json.JSONArray
 import java.nio.charset.Charset
 
 class NearbyConnectionManager(private val context: Context, private val listener: ConnectionListener) {
@@ -95,6 +96,8 @@ class NearbyConnectionManager(private val context: Context, private val listener
             if (packet.type == MeshPacket.PacketType.ROLE_ADVERTISEMENT) {
                 // Role was already learned in updateRoute
                 broadcastTopology()
+            } else if (packet.type == MeshPacket.PacketType.TOPOLOGY_UPDATE) {
+                handleTopologyUpdate(packet)
             } else {
                 listener.onMeshPacketReceived(packet)
             }
@@ -103,6 +106,26 @@ class NearbyConnectionManager(private val context: Context, private val listener
         // 3. Should I forward it?
         if (packet.destinationId != localNodeId && packet.hopCount < 15) { // Max TTL 15
             forwardPacket(packet)
+        }
+    }
+
+    private fun handleTopologyUpdate(packet: MeshPacket) {
+        try {
+            val jsonArray = JSONArray(String(packet.data, Charset.forName("UTF-8")))
+            for (i in 0 until jsonArray.length()) {
+                val routeJson = jsonArray.getJSONObject(i)
+                val destId = routeJson.getString("dest")
+                val hops = routeJson.getInt("hops")
+                val seq = routeJson.getInt("seq")
+                val role = NodeRole.valueOf(routeJson.getString("role"))
+                
+                if (destId == localNodeId) continue
+                
+                // The next hop to that destination is the node that sent us this update (packet.originId)
+                updateRoute(destId, packet.originId, hops + packet.hopCount, seq, role)
+            }
+        } catch (e: Exception) {
+            Log.e("Mesh", "Failed to parse topology update", e)
         }
     }
 
@@ -194,6 +217,28 @@ class NearbyConnectionManager(private val context: Context, private val listener
 
     private fun broadcastTopology() {
         listener.onTopologyUpdated(directNeighbors, routingTable)
+        
+        val summaries = JSONArray()
+        routingTable.values.forEach {
+            val routeJson = JSONObject()
+            routeJson.put("dest", it.destinationId)
+            routeJson.put("hops", it.hopCount)
+            routeJson.put("seq", it.sequenceNum)
+            routeJson.put("role", it.role.name)
+            summaries.put(routeJson)
+        }
+        val data = summaries.toString().toByteArray(Charset.forName("UTF-8"))
+        directNeighbors.forEach { neighbor ->
+            val packet = MeshPacket(
+                originId = localNodeId,
+                destinationId = neighbor,
+                type = MeshPacket.PacketType.TOPOLOGY_UPDATE,
+                sequenceNum = ++currentSequenceNum,
+                originRole = localRole,
+                data = data
+            )
+            sendDirect(neighbor, packet)
+        }
     }
 
     private fun serializePacket(packet: MeshPacket): ByteArray {
