@@ -59,7 +59,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
             val destAddress = InetAddress.getByAddress(destIp)
 
             when (protocol) {
-                17 -> handleUDP(originNodeId, destAddress, buffer, ihl)
+                17 -> handleUDP(originNodeId, srcIp, destIp, destAddress, buffer, ihl)
                 6 -> handleTCP(originNodeId, srcIp, destIp, destAddress, buffer, ihl, packetData)
                 else -> Log.d("NAT", "Unsupported protocol: $protocol")
             }
