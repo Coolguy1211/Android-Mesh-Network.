@@ -19,13 +19,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.zaiah.meshapp.databinding.ActivityMainBinding
+import com.zaiah.meshapp.network.models.MeshPacket
 import com.zaiah.meshapp.receiver.MeshDeviceAdminReceiver
+import java.nio.charset.Charset
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val meshApp get() = MeshApp.instance
     private var wakeLock: PowerManager.WakeLock? = null
+    private var localNodeId: String = ""
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -40,6 +43,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Generate unique node ID to prevent collisions with identical phone models
+        val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "Unknown"
+        localNodeId = "${Build.MODEL}-${androidId.takeLast(4)}"
 
         // Initial check
         updatePermissionUi(hasAllPermissions())
@@ -59,8 +66,39 @@ class MainActivity : AppCompatActivity() {
             if (!meshApp.isGateway) prepareVpn()
         }
 
+        // Setup Chat UI
+        binding.btnSendChat.setOnClickListener {
+            val text = binding.inputChat.text.toString()
+            if (text.isNotBlank()) {
+                val msg = "[$localNodeId]: $text"
+                appendChat(msg)
+                meshApp.meshManager.sendToNode(
+                    "BROADCAST",
+                    msg.toByteArray(Charset.forName("UTF-8")),
+                    MeshPacket.PacketType.TEXT
+                )
+                binding.inputChat.text.clear()
+            }
+        }
+
+        // Listen for incoming chat messages
+        meshApp.chatListener = { msg ->
+            runOnUiThread { appendChat(msg) }
+        }
+
         requestPersistence()
         startDashboardUpdates()
+        
+        // Restore old chat messages if any
+        binding.textViewChat.text = "--- Chat Started ---\n" + meshApp.chatMessages.joinToString("\n")
+    }
+
+    private fun appendChat(msg: String) {
+        val current = binding.textViewChat.text.toString()
+        binding.textViewChat.text = "$current\n$msg"
+        binding.chatScrollView.post {
+            binding.chatScrollView.fullScroll(android.view.View.FOCUS_DOWN)
+        }
     }
 
     private fun hasAllPermissions(): Boolean {
@@ -114,7 +152,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupMesh() {
-        meshApp.meshManager.startMesh(Build.MODEL)
+        meshApp.meshManager.startMesh(localNodeId)
         binding.textViewStatus.text = "Mesh Active"
         binding.btnStartMesh.isEnabled = false
         Toast.makeText(this, "Mesh Discovery Started", Toast.LENGTH_SHORT).show()
@@ -125,7 +163,7 @@ class MainActivity : AppCompatActivity() {
         handler.post(object : Runnable {
             override fun run() {
                 val stats = StringBuilder()
-                stats.append("LOCAL NODE: ${Build.MODEL}\n")
+                stats.append("LOCAL NODE: $localNodeId\n")
                 stats.append("ROLE: ${if (meshApp.isGateway) "GATEWAY" else "CLIENT"}\n")
                 stats.append("----------------------------\n")
                 stats.append("NEIGHBORS (${meshApp.neighbors.size}):\n")
@@ -169,6 +207,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         wakeLock?.release()
+        meshApp.chatListener = null
         super.onDestroy()
     }
 }

@@ -18,6 +18,10 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
     // Topology data for UI
     var neighbors = setOf<String>()
     var routes = mapOf<String, RouteEntry>()
+    
+    // Chat data
+    var chatMessages = mutableListOf<String>()
+    var chatListener: ((String) -> Unit)? = null
 
     fun setGatewayMode(enabled: Boolean) {
         meshManager.localRole = if (enabled) com.zaiah.meshapp.network.models.NodeRole.GATEWAY else com.zaiah.meshapp.network.models.NodeRole.CLIENT
@@ -62,6 +66,10 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
             } else {
                 vpnService?.injectPacket(packet.data)
             }
+        } else if (packet.type == MeshPacket.PacketType.TEXT) {
+            val msg = String(packet.data, java.nio.charset.Charset.forName("UTF-8"))
+            chatMessages.add(msg)
+            chatListener?.invoke(msg)
         }
     }
     override fun onTopologyUpdated(neighbors: Set<String>, routes: Map<String, RouteEntry>) {

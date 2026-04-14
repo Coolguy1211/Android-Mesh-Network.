@@ -4,6 +4,8 @@ import com.zaiah.meshapp.MeshApp
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.charset.Charset
+import com.zaiah.meshapp.network.models.MeshPacket
 
 class MeshWebServer(port: Int = 8080) : NanoHTTPD(port) {
 
@@ -15,8 +17,38 @@ class MeshWebServer(port: Int = 8080) : NanoHTTPD(port) {
             "/api/status" -> serveStatus()
             "/api/nodes" -> serveNodes()
             "/api/routes" -> serveRoutes()
+            "/api/chat" -> serveChat()
+            "/api/send" -> handleSendChat(session)
             "/" -> serveDashboard()
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "404 Not Found")
+        }
+    }
+
+    private fun serveChat(): Response {
+        val jsonArray = JSONArray()
+        MeshApp.instance.chatMessages.forEach {
+            jsonArray.put(it)
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
+    }
+
+    private fun handleSendChat(session: IHTTPSession): Response {
+        try {
+            session.parseBody(HashMap())
+            val msg = session.parameters["msg"]?.get(0) ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Missing msg parameter")
+            
+            val formattedMsg = "[Web UI]: $msg"
+            MeshApp.instance.chatMessages.add(formattedMsg)
+            MeshApp.instance.chatListener?.invoke(formattedMsg)
+            
+            MeshApp.instance.meshManager.sendToNode(
+                "BROADCAST",
+                formattedMsg.toByteArray(Charset.forName("UTF-8")),
+                MeshPacket.PacketType.TEXT
+            )
+            return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "Sent")
+        } catch (e: Exception) {
+            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, e.message)
         }
     }
 
@@ -65,11 +97,24 @@ class MeshWebServer(port: Int = 8080) : NanoHTTPD(port) {
                     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
                     th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
                     th { background-color: #f8f8f8; }
+                    #chat-box { height: 200px; overflow-y: scroll; background: #eee; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+                    .chat-input { display: flex; gap: 10px; }
+                    .chat-input input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+                    .chat-input button { padding: 10px 20px; background: #1565C0; color: white; border: none; border-radius: 4px; cursor: pointer; }
                 </style>
             </head>
             <body>
                 <h1>🌐 Mesh Dashboard</h1>
                 
+                <div class="card">
+                    <h2>💬 Live Chat</h2>
+                    <div id="chat-box"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-msg" placeholder="Message the mesh..." onkeypress="if(event.key === 'Enter') sendChat()">
+                        <button onclick="sendChat()">Send</button>
+                    </div>
+                </div>
+
                 <div class="card">
                     <h2>Status</h2>
                     <pre id="status-box">Loading...</pre>
@@ -83,8 +128,27 @@ class MeshWebServer(port: Int = 8080) : NanoHTTPD(port) {
                 </div>
 
                 <script>
+                    async function sendChat() {
+                        const input = document.getElementById('chat-msg');
+                        const msg = input.value;
+                        if (!msg) return;
+                        input.value = '';
+                        await fetch('/api/send', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: 'msg=' + encodeURIComponent(msg)
+                        });
+                        fetchData();
+                    }
+
                     async function fetchData() {
                         try {
+                            const chatRes = await fetch('/api/chat');
+                            const chatJson = await chatRes.json();
+                            const chatBox = document.getElementById('chat-box');
+                            chatBox.innerHTML = chatJson.join('<br>');
+                            chatBox.scrollTop = chatBox.scrollHeight;
+
                             const statusRes = await fetch('/api/status');
                             const statusJson = await statusRes.json();
                             document.getElementById('status-box').textContent = JSON.stringify(statusJson, null, 2);
@@ -107,7 +171,7 @@ class MeshWebServer(port: Int = 8080) : NanoHTTPD(port) {
                         }
                     }
                     fetchData();
-                    setInterval(fetchData, 5000);
+                    setInterval(fetchData, 2000);
                 </script>
             </body>
             </html>
