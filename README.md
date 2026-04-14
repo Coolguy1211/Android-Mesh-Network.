@@ -2,7 +2,38 @@
 
 A robust Android application that forms an offline mesh network using WiFi and Bluetooth to enable messaging, file sharing, and transparent internet sharing.
 
-## 🚀 Features
+## 📊 Architecture Diagram
+
+```text
+       ┌────────────────────────┐
+       │     "REAL" INTERNET    │
+       └───────────┬────────────┘
+                   │ (WiFi/Cellular)
+                   ▼
+       ┌────────────────────────┐
+       │     GATEWAY NODE       │
+       │ (Phone with Internet)  │◀──┐
+       └───────────┬────────────┘   │
+                   │ (Nearby API)   │ (Mesh Network)
+         ┌─────────┴─────────┐      │
+         ▼                   ▼      │
+┌────────────────┐  ┌────────────────┐  │
+│   CLIENT NODE  │  │   CLIENT NODE  │  │
+│ (VpnService)   │  │ (VpnService)   │◀─┘
+└────────┬───────┘  └────────┬───────┘
+         │                   │
+         └─────▶ MESH ◀──────┘
+         (Text / Files / VPN)
+```
+
+### Data Flow Explanation
+1.  **Mesh Formation**: Phones discover each other via **Bluetooth/BLE** and upgrade to high-speed **WiFi Direct** automatically using the Nearby Connections API.
+2.  **Messaging/Files**: Data is sent as "Payloads" directly between nodes.
+3.  **Internet Sharing**:
+    -   **Client Node**: Runs a `VpnService` that captures all IP packets from the system.
+    -   **Tunneling**: These packets are sent over the Mesh (Nearby API) to the **Gateway**.
+    -   **Routing**: The Gateway forwards packets to the internet and sends responses back to the Client.
+
 
 -   **P2P Mesh Networking**: Uses Google's Nearby Connections API (`STRATEGY_P2P_CLUSTER`) to form an M-to-N mesh network automatically over Bluetooth, BLE, and WiFi Direct.
 -   **Offline Texting**: Send and receive real-time text messages across the mesh without cellular data or external WiFi.
