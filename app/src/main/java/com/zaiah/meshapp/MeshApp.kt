@@ -2,6 +2,7 @@ package com.zaiah.meshapp
 
 import android.app.Application
 import com.zaiah.meshapp.network.NearbyConnectionManager
+import com.zaiah.meshapp.network.MeshVpnService
 import com.zaiah.meshapp.network.models.MeshPacket
 import com.zaiah.meshapp.network.models.RouteEntry
 import com.zaiah.meshapp.network.UserSpaceNAT
@@ -10,6 +11,8 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
 
     lateinit var meshManager: NearbyConnectionManager
     var nat: UserSpaceNAT? = null
+    var vpnService: MeshVpnService? = null
+    var webServer: MeshWebServer? = null
     
     // Topology data for UI
     var neighbors = setOf<String>()
@@ -33,6 +36,13 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
             // Send response back over mesh
             meshManager.sendToNode(originId, data, MeshPacket.PacketType.VPN_IP_PACKET)
         }
+        
+        try {
+            webServer = com.zaiah.meshapp.network.MeshWebServer(8080)
+            webServer?.start()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     companion object {
@@ -45,8 +55,12 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
     override fun onConnectionResult(endpointId: String, result: com.google.android.gms.nearby.connection.ConnectionResolution) {}
     override fun onDisconnected(endpointId: String) {}
     override fun onMeshPacketReceived(packet: MeshPacket) {
-        if (isGateway && packet.type == MeshPacket.PacketType.VPN_IP_PACKET) {
-            nat?.handlePacket(packet.originId, packet.data)
+        if (packet.type == MeshPacket.PacketType.VPN_IP_PACKET) {
+            if (isGateway) {
+                nat?.handlePacket(packet.originId, packet.data)
+            } else {
+                vpnService?.injectPacket(packet.data)
+            }
         }
     }
     override fun onTopologyUpdated(neighbors: Set<String>, routes: Map<String, RouteEntry>) {

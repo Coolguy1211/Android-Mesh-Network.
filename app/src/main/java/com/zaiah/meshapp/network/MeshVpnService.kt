@@ -16,11 +16,14 @@ class MeshVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var isRunning = false
 
+    private var outputStream: FileOutputStream? = null
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") {
             stopVpn()
             return START_NOT_STICKY
         }
+        MeshApp.instance.vpnService = this
         startVpn()
         return START_STICKY
     }
@@ -38,9 +41,18 @@ class MeshVpnService : VpnService() {
         vpnInterface = builder.establish()
 
         if (vpnInterface != null) {
+            outputStream = FileOutputStream(vpnInterface?.fileDescriptor)
             thread {
                 runVpnTunnel()
             }
+        }
+    }
+
+    fun injectPacket(packet: ByteArray) {
+        try {
+            outputStream?.write(packet)
+        } catch (e: Exception) {
+            Log.e("VPN", "Error injecting packet", e)
         }
     }
 
@@ -51,10 +63,10 @@ class MeshVpnService : VpnService() {
         while (isRunning) {
             val length = inputStream.read(buffer.array())
             if (length > 0) {
-                // Find a Gateway in our routing table
-                val gatewayId = MeshApp.instance.routes.values.find { 
+                // Find the closest Gateway in our routing table
+                val gatewayId = MeshApp.instance.routes.values.filter { 
                     it.role == com.zaiah.meshapp.network.models.NodeRole.GATEWAY
-                }?.destinationId ?: "BROADCAST"
+                }.minByOrNull { it.hopCount }?.destinationId ?: "BROADCAST"
 
                 MeshApp.instance.meshManager.sendToNode(
                     gatewayId, 

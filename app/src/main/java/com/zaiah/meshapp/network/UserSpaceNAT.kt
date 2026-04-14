@@ -68,7 +68,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
         }
     }
 
-    private fun handleUDP(originId: String, destAddr: InetAddress, buffer: ByteBuffer, ihl: Int) {
+    private fun handleUDP(originId: String, srcIp: ByteArray, destIp: ByteArray, destAddr: InetAddress, buffer: ByteBuffer, ihl: Int) {
         buffer.position(ihl)
         val srcPort = buffer.short.toInt() and 0xFFFF
         val destPort = buffer.short.toInt() and 0xFFFF
@@ -88,9 +88,13 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
                     while (true) {
                         val p = DatagramPacket(recvBuf, recvBuf.size)
                         s.receive(p)
-                        // In a real NAT we'd wrap this back in an IPv4 header
-                        // For now we send raw payload; the client VpnService must re-wrap
-                        onResponse(originId, p.data.copyOf(p.length))
+                        val responsePayload = p.data.copyOf(p.length)
+                        val fullResponse = IpPacketBuilder.buildUdpPacket(
+                            srcIp = destIp, destIp = srcIp,
+                            srcPort = destPort, destPort = srcPort,
+                            payload = responsePayload
+                        )
+                        onResponse(originId, fullResponse)
                     }
                 } catch (e: Exception) { s.close() }
             }
@@ -136,7 +140,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
                 
                 if (isFin) {
                     // Send FIN-ACK
-                    val finAck = TcpPacketBuilder.buildPacket(
+                    val finAck = IpPacketBuilder.buildTcpPacket(
                         srcIp = destIp, destIp = srcIp,
                         srcPort = destPort, destPort = srcPort,
                         seqNum = relay.serverSeqNum, ackNum = relay.clientSeqNum + 1,
@@ -173,7 +177,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
                     
                     // Send SYN-ACK to client
                     clientSeqNum++ // ACK the client's SYN
-                    val synAck = TcpPacketBuilder.buildPacket(
+                    val synAck = IpPacketBuilder.buildTcpPacket(
                         srcIp = serverIp, destIp = clientIp,
                         srcPort = serverPort, destPort = clientPort,
                         seqNum = serverSeqNum, ackNum = clientSeqNum,
@@ -191,7 +195,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
             try {
                 channel?.write(ByteBuffer.wrap(data))
                 // Send ACK back to client for the data
-                val ack = TcpPacketBuilder.buildPacket(
+                val ack = IpPacketBuilder.buildTcpPacket(
                     srcIp = serverIp, destIp = clientIp,
                     srcPort = serverPort, destPort = clientPort,
                     seqNum = serverSeqNum, ackNum = clientSeqNum,
@@ -209,7 +213,7 @@ class UserSpaceNAT(private val onResponse: (originNodeId: String, data: ByteArra
                     val payload = buf.array().copyOf(read)
                     
                     // Send DATA (PSH-ACK) back to client
-                    val pshAck = TcpPacketBuilder.buildPacket(
+                    val pshAck = IpPacketBuilder.buildTcpPacket(
                         srcIp = serverIp, destIp = clientIp,
                         srcPort = serverPort, destPort = clientPort,
                         seqNum = serverSeqNum, ackNum = clientSeqNum,
