@@ -38,8 +38,13 @@ class MeshWebServer(port: Int = 8080) : NanoHTTPD(port) {
             val msg = session.parameters["msg"]?.get(0) ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Missing msg parameter")
             
             val formattedMsg = "[Web UI]: $msg"
-            MeshApp.instance.chatMessages.add(formattedMsg)
-            MeshApp.instance.chatListener?.invoke(formattedMsg)
+            val chatMsg = com.zaiah.meshapp.network.models.ChatMessage(
+                senderId = "WebUI",
+                message = msg,
+                isSentByMe = false // Mark as remote since it came from web
+            )
+            MeshApp.instance.chatMessages.add(chatMsg)
+            MeshApp.instance.chatListener?.invoke(chatMsg)
             
             MeshApp.instance.meshManager.sendToNode(
                 "BROADCAST",
