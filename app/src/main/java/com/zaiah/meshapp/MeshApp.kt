@@ -73,7 +73,6 @@ class MeshApp : Application(), NearbyConnectionManager.ConnectionListener {
             
             // Bridge object to pass to Python
             val bridge = object {
-                @com.chaquo.python.PySerializable
                 fun sendNearbyPacket(data: ByteArray) {
                     // This is called by Reticulum to send data OUT
                     meshManager.sendToNode("BROADCAST", data, MeshPacket.PacketType.RETICULUM_PACKET)
